@@ -31,7 +31,7 @@ Once a candidate number is identified, the program calculates the difference \( 
 
 ## Results
 
-**Near Perfect Numbers up to 10,000,000 of the form \( n = 2^k \times p^2 \):**
+Near Perfect Numbers up to 10,000,000 of the form \( n = 2^k \times p^2 \):
 
 | **n**    | **sigma(n)** | **2n**   | **diff** | **Valid (d1, d2) Combinations**     |
 |----------|--------------|----------|----------|--------------------------------------|
@@ -46,4 +46,5 @@ Once a candidate number is identified, the program calculates the difference \( 
 | 8454272  | 16908285     | 16908544 | -259     | -2 -257; -257 -2                      |
 
 Near Perfect Numbers up to 1,000,000 of the form \( n = 2^k \times p \):
+
 [Link to CSV](https://raw.githubusercontent.com/0xCUB3/Near-Perfect-Tester/refs/heads/master/one_million_2kp.csv)
