@@ -6,7 +6,7 @@
 
 using namespace std;
 
-// we love AI for making descriptiong :)
+// we love AI for making descriptions :)
 /**
  * Function: computeDivisorsAndSigma
  * --------------------
