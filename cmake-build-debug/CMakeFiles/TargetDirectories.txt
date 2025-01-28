@@ -1,0 +1,3 @@
+/Users/alexanderskula/Documents/Near-Perfect-Tester/cmake-build-debug/CMakeFiles/Near_Perfect_Tester.dir
+/Users/alexanderskula/Documents/Near-Perfect-Tester/cmake-build-debug/CMakeFiles/edit_cache.dir
+/Users/alexanderskula/Documents/Near-Perfect-Tester/cmake-build-debug/CMakeFiles/rebuild_cache.dir
