@@ -4,9 +4,9 @@
 #include <string>
 #include <algorithm>
 
-// Namespace for convenience
 using namespace std;
 
+// we love AI for making descriptiong :)
 /**
  * Function: computeDivisorsAndSigma
  * --------------------
@@ -159,7 +159,6 @@ vector<string> findValidCombinations(const vector<int> &D, long long diff){
 }
 
 int main(){
-    // Prompt user for input
     int N;
     cout << "Enter the upper limit N: ";
     cin >> N;
@@ -205,7 +204,7 @@ int main(){
     cout << "\nNear Perfect Numbers up to " << N << ":\n";
     cout << "----------------------------------------\n";
 
-    bool anyNearPerfect = false; // Flag to check if any near perfect numbers are found
+    bool anyNearPerfect = false;
 
     // Iterate through each number to check the near perfect condition based on the selected form
     for(int n = 1; n <= N; ++n){
