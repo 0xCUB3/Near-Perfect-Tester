@@ -6,6 +6,7 @@
 #include <limits>
 #include <iomanip>
 #include <fstream>
+#include <cctype> // For tolower
 using namespace std;
 
 /**
@@ -57,27 +58,34 @@ int isTwoPowerTimesPrime(int n, const vector<bool> &isPrime) {
 }
 
 /**
- * Function: isTwoPowerTimesPrimeSquared
- * -------------------------------------
- * Checks if a given number n can be expressed in the form n = 2^k * p^2,
- * where p is an odd prime and k >= 0.
+ * Function: isTwoPowerTimesPrimePower
+ * -----------------------------------
+ * Checks if a given number n can be expressed in the form n = 2^k * p^m,
+ * where p is an odd prime, m >= 1, and k >= 0.
  *
  * Parameters:
  *  - n: The number to be checked.
  *  - isPrime: A vector indicating primality of numbers up to N.
+ *  - exponent: The exponent m for the prime p.
  *
  * Returns:
- *  - The prime p if n = 2^k * p^2; otherwise, 0.
+ *  - The prime p if n = 2^k * p^m; otherwise, 0.
  */
-int isTwoPowerTimesPrimeSquared(int n, const vector<bool> &isPrime) {
-    if (n < 1) return 0;
+int isTwoPowerTimesPrimePower(int n, const vector<bool> &isPrime, int exponent) {
+    if (n < 1 || exponent < 1) return 0;
     while (n % 2 == 0) {
         n /= 2;
     }
-    // Now, n should be p^2
-    double sqrt_n = sqrt(static_cast<double>(n));
-    int p = round(sqrt_n);
-    if (p * p == n && p >= 3 && isPrime[p]) {
+    // Now, n should be p^m
+    double root = pow(static_cast<double>(n), 1.0 / exponent);
+    int p = round(root);
+    // Verify p^exponent == n and p is prime
+    long long p_power = 1;
+    for(int i = 0; i < exponent; ++i) {
+        p_power *= p;
+        if(p_power > n) break;
+    }
+    if (p_power == n && p >= 3 && isPrime[p]) {
         return p;
     }
     return 0;
@@ -85,7 +93,7 @@ int isTwoPowerTimesPrimeSquared(int n, const vector<bool> &isPrime) {
 
 /**
  * Function: computeDivisorsAndSigmaSingle
- * --------------------------------------
+ * ---------------------------------------
  * Computes the divisors of a single number and their sum (sigma).
  *
  * Parameters:
@@ -114,6 +122,18 @@ pair<vector<int>, long long> computeDivisorsAndSigmaSingle(int n) {
 }
 
 /**
+ * Enum: SignOption
+ * ----------------
+ * Enumerates the possible sign combination options.
+ */
+enum SignOption {
+    ALL = 1,
+    MIXED_SIGNS,
+    ONLY_POSITIVE,
+    ONLY_NEGATIVE
+};
+
+/**
  * Function: findValidCombinations
  * -------------------------------
  * Finds all valid combinations of divisors d1 and d2 with their respective signs
@@ -122,11 +142,18 @@ pair<vector<int>, long long> computeDivisorsAndSigmaSingle(int n) {
  * Parameters:
  *  - D: Reference to the vector containing all divisors of n.
  *  - diff: The difference sigma(n) - 2n.
+ *  - signOption: The user's choice for sign combinations.
  *
  * Returns:
  *  - A vector of strings, each representing a valid combination of d1 and d2 with signs.
+ *
+ * Sign Combinations:
+ *  - ALL: Includes ++, +-, -+, --
+ *  - MIXED_SIGNS: Includes +-, -+
+ *  - ONLY_POSITIVE: Includes ++
+ *  - ONLY_NEGATIVE: Includes --
  */
-vector<string> findValidCombinations(const vector<int> &D, long long diff) {
+vector<string> findValidCombinations(const vector<int> &D, long long diff, SignOption signOption) {
     vector<string> validPairs;
     // Iterate through all possible pairs (d1, d2)
     for (auto it1 = D.begin(); it1 != D.end(); ++it1) {
@@ -139,18 +166,57 @@ vector<string> findValidCombinations(const vector<int> &D, long long diff) {
                 continue;
             }
 
-            // Check all four possible sign combinations
-            if ((d1 + d2) == diff) {
-                validPairs.emplace_back("+" + to_string(d1) + " +" + to_string(d2));
-            }
-            if ((d1 - d2) == diff) {
-                validPairs.emplace_back("+" + to_string(d1) + " -" + to_string(d2));
-            }
-            if ((d2 - d1) == diff) {
-                validPairs.emplace_back("+" + to_string(d2) + " -" + to_string(d1));
-            }
-            if ((-d1 - d2) == diff) {
-                validPairs.emplace_back("-" + to_string(d1) + " -" + to_string(d2));
+            // Depending on the signOption, include or exclude certain combinations
+            switch(signOption) {
+                case ALL:
+                    // Check all four possible sign combinations
+                    // ++
+                    if ((d1 + d2) == diff) {
+                        validPairs.emplace_back("+" + to_string(d1) + " +" + to_string(d2));
+                    }
+                    // +-
+                    if ((d1 - d2) == diff) {
+                        validPairs.emplace_back("+" + to_string(d1) + " -" + to_string(d2));
+                    }
+                    // -+
+                    if ((-d1 + d2) == diff) {
+                        validPairs.emplace_back("-" + to_string(d1) + " +" + to_string(d2));
+                    }
+                    // --
+                    if ((-d1 - d2) == diff) {
+                        validPairs.emplace_back("-" + to_string(d1) + " -" + to_string(d2));
+                    }
+                    break;
+
+                case MIXED_SIGNS:
+                    // Include only +-, -+
+                    // +-
+                    if ((d1 - d2) == diff) {
+                        validPairs.emplace_back("+" + to_string(d1) + " -" + to_string(d2));
+                    }
+                    // -+
+                    if ((-d1 + d2) == diff) {
+                        validPairs.emplace_back("-" + to_string(d1) + " +" + to_string(d2));
+                    }
+                    break;
+
+                case ONLY_POSITIVE:
+                    // Include only ++
+                    if ((d1 + d2) == diff) {
+                        validPairs.emplace_back("+" + to_string(d1) + " +" + to_string(d2));
+                    }
+                    break;
+
+                case ONLY_NEGATIVE:
+                    // Include only --
+                    if ((-d1 - d2) == diff) {
+                        validPairs.emplace_back("-" + to_string(d1) + " -" + to_string(d2));
+                    }
+                    break;
+
+                default:
+                    // Do nothing for undefined options
+                    break;
             }
         }
     }
@@ -164,18 +230,19 @@ vector<string> findValidCombinations(const vector<int> &D, long long diff) {
 
 /**
  * Function: generateNumbers
- * ------------------------
+ * -------------------------
  * Generates a list of numbers to process based on the selected form.
  *
  * Parameters:
  *  - N: The upper limit up to which numbers are generated.
  *  - choice: The form selected by the user.
  *  - isPrime: A vector indicating primality of numbers up to N.
+ *  - exponent: The exponent m for the prime p (only relevant for choice 3).
  *
  * Returns:
  *  - A vector of integers representing the numbers to process.
  */
-vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime) {
+vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime, int exponent = 2) {
     vector<int> numbers;
 
     if (choice == 1) {
@@ -199,14 +266,20 @@ vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime) {
         }
     }
     else if (choice == 3) {
-        // Numbers of the form n = 2^k * p^2
+        // Numbers of the form n = 2^k * p^m
         for (int p = 3; p <= N; ++p) {
             if (isPrime[p]) {
-                long long p_squared = static_cast<long long>(p) * p;
-                if (p_squared > N) continue;
+                // Compute p^m
+                long long p_power = 1;
+                for(int i = 0; i < exponent; ++i) {
+                    p_power *= p;
+                    if(p_power > N) break;
+                }
+                if(p_power > N) continue;
+
                 int power = 1;
                 while (true) {
-                    long long n = p_squared * power;
+                    long long n = p_power * power;
                     if (n > N) break;
                     numbers.push_back(static_cast<int>(n));
                     power *= 2;
@@ -224,7 +297,7 @@ vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime) {
 
 /**
  * Function: printTableHeader
- * -------------------------
+ * --------------------------
  * Prints the header of the formatted table with vertical splitters.
  */
 void printTableHeader() {
@@ -260,7 +333,7 @@ void printTableHeader() {
 
 /**
  * Function: printTableRow
- * ----------------------
+ * -----------------------
  * Prints a single row of the formatted table with vertical splitters.
  *
  * Parameters:
@@ -295,16 +368,19 @@ int main() {
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
     }
 
+    // Clear the input buffer
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
     cout << "\nChoose the form to search for near perfect numbers:\n";
     cout << "1. All numbers (default)\n";
     cout << "2. Numbers of the form n = 2^k * p (where p is an odd prime)\n";
-    cout << "3. Numbers of the form n = 2^k * p^2 (where p is an odd prime)\n";
+    cout << "3. Numbers of the form n = 2^k * p^m (where p is an odd prime and m is user-specified)\n";
     cout << "Enter 1, 2, or 3 (Press Enter for default - All numbers): ";
 
-    cin.ignore(numeric_limits<streamsize>::max(), '\n');
     string choiceStr;
     getline(cin, choiceStr);
     int choice;
+    int exponent = 2; // Default exponent for choice 3
 
     if(choiceStr.empty()) {
         choice = 1;
@@ -323,6 +399,30 @@ int main() {
         }
     }
 
+    // If choice 3 is selected, prompt for exponent
+    if(choice == 3) {
+        cout << "Enter the exponent m for the form n = 2^k * p^m (m must be a positive integer >=1): ";
+        string exponentStr;
+        getline(cin, exponentStr);
+        if(exponentStr.empty()) {
+            cout << "No exponent entered. Defaulting to m = 2.\n";
+            exponent = 2;
+        }
+        else {
+            try {
+                exponent = stoi(exponentStr);
+                if(exponent < 1) {
+                    cout << "Invalid exponent. Defaulting to m = 2.\n";
+                    exponent = 2;
+                }
+            }
+            catch(...) {
+                cout << "Invalid input. Defaulting to m = 2.\n";
+                exponent = 2;
+            }
+        }
+    }
+
     // Prompt to exclude primes
     cout << "Do you want to exclude prime numbers from the output? (y/n): ";
     string excludePrimesStr;
@@ -335,21 +435,69 @@ int main() {
         }
     }
 
+    // Prompt to select sign combination condition
+    cout << "\nSelect the sign combinations to include in the search:\n";
+    cout << "1. All combinations (++ , +-, -+, --)\n";
+    cout << "2. Only mixed signs (+-, -+)\n";
+    cout << "3. Only positive signs (++ )\n";
+    cout << "4. Only negative signs (--)\n";
+    cout << "Enter 1, 2, 3, or 4 (Press Enter for default - All combinations): ";
+
+    string signOptionStr;
+    getline(cin, signOptionStr);
+    SignOption signOption = ALL; // Default
+    if(!signOptionStr.empty()) {
+        try {
+            int signChoice = stoi(signOptionStr);
+            if(signChoice >=1 && signChoice <=4) {
+                signOption = static_cast<SignOption>(signChoice);
+            }
+            else {
+                cout << "Invalid choice. Defaulting to All combinations.\n";
+                signOption = ALL;
+            }
+        }
+        catch(...) {
+            cout << "Invalid input. Defaulting to All combinations.\n";
+            signOption = ALL;
+        }
+    }
+
     // Generate primes up to N
     vector<bool> isPrime = sieveOfEratosthenes(N);
 
     // Generate numbers to process based on user's choice
-    vector<int> numbersToProcess = generateNumbers(N, choice, isPrime);
+    vector<int> numbersToProcess = generateNumbers(N, choice, isPrime, (choice == 3) ? exponent : 2);
 
     // Display the type of numbers being processed
     cout << "\nNear Perfect Numbers up to " << N;
     switch(choice) {
         case 1: cout << ":"; break;
         case 2: cout << " of the form n = 2^k * p:"; break;
-        case 3: cout << " of the form n = 2^k * p^2:"; break;
+        case 3: cout << " of the form n = 2^k * p^" << exponent << ":"; break;
     }
     if(excludePrimes) {
         cout << " (Primes excluded from output)";
+    }
+
+    // Display selected sign combinations
+    cout << "\nSign Combinations Included: ";
+    switch(signOption) {
+        case ALL:
+            cout << "All combinations (++ , +-, -+, --)";
+            break;
+        case MIXED_SIGNS:
+            cout << "Only mixed signs (+-, -+)";
+            break;
+        case ONLY_POSITIVE:
+            cout << "Only positive signs (++ )";
+            break;
+        case ONLY_NEGATIVE:
+            cout << "Only negative signs (--)";
+            break;
+        default:
+            cout << "All combinations (++ , +-, -+, --)";
+            break;
     }
     cout << "\n";
 
@@ -373,26 +521,47 @@ int main() {
             continue;
         }
 
+        // Compute sigma(n)
         auto [divisors, sigma] = computeDivisorsAndSigmaSingle(n);
         long long two_n = 2LL * n;
         long long diff = sigma - two_n;
 
-        vector<string> validPairs = findValidCombinations(divisors, diff);
+        // Find valid (d1, d2) combinations based on signOption
+        vector<string> validPairs = findValidCombinations(divisors, diff, signOption);
 
         // **New Logic: Exclude numbers where all validPairs involve the same divisor**
         bool hasDistinctPair = false;
+        string combinations; // Initialize here to avoid scope issues
         for(const auto &pairStr : validPairs) {
             // Parse the pair string to extract d1 and d2
-            // Expected format: "+d1 +d2", "+d1 -d2", etc.
+            // Possible formats:
+            // "+d1 +d2", "+d1 -d2", "-d1 +d2", "-d1 -d2"
             size_t spacePos = pairStr.find(' ');
             if(spacePos != string::npos) {
+                // Extract d1
                 string d1Str = pairStr.substr(1, spacePos - 1); // Skip the '+' or '-'
-                string d2Str = pairStr.substr(spacePos + 2, pairStr.length() - spacePos - 2); // Skip the sign
-                int d1 = stoi(d1Str);
-                int d2 = stoi(d2Str);
-                if(d1 != d2) {
-                    hasDistinctPair = true;
-                    break;
+
+                // Extract d2 with sign intact
+                string d2Str = pairStr.substr(spacePos + 1); // Includes the sign
+
+                // No need to remove leading '+', as stoi handles it
+                try {
+                    int d1 = stoi(d1Str);
+                    int d2 = stoi(d2Str); // Corrected Line
+
+                    // Check if d1 and d2 have different absolute values
+                    if(abs(d1) != abs(d2)) {
+                        hasDistinctPair = true;
+                        break;
+                    }
+                }
+                catch(const std::invalid_argument& e) {
+                    cerr << "Invalid pair format: " << pairStr << ". Skipping this pair.\n";
+                    continue; // Skip this pair and continue with the next
+                }
+                catch(const std::out_of_range& e) {
+                    cerr << "Pair values out of range: " << pairStr << ". Skipping this pair.\n";
+                    continue;
                 }
             }
         }
@@ -405,18 +574,18 @@ int main() {
         if(!validPairs.empty()) {
             anyNearPerfect = true;
             // Combine all valid pairs into a single string separated by "; "
-            string combinations;
+            string combinationsCombined;
             for(const auto &combination : validPairs) {
-                if(!combinations.empty()) combinations += "; ";
-                combinations += combination;
+                if(!combinationsCombined.empty()) combinationsCombined += "; ";
+                combinationsCombined += combination;
             }
 
             // Print the row in the table
-            printTableRow(n, sigma, two_n, diff, combinations);
+            printTableRow(n, sigma, two_n, diff, combinationsCombined);
 
             // Write the row to the CSV file
             // Enclose combinations in quotes to handle commas or special characters
-            csvFile << n << "," << sigma << "," << two_n << "," << diff << ",\"" << combinations << "\"\n";
+            csvFile << n << "," << sigma << "," << two_n << "," << diff << ",\"" << combinationsCombined << "\"\n";
         }
     }
 
@@ -438,7 +607,7 @@ int main() {
         switch(choice) {
             case 1: cout << "."; break;
             case 2: cout << " of the form n = 2^k * p."; break;
-            case 3: cout << " of the form n = 2^k * p^2."; break;
+            case 3: cout << " of the form n = 2^k * p^" << exponent << "."; break;
         }
         if(excludePrimes) {
             cout << " Primes were excluded from the output.";
