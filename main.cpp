@@ -6,7 +6,6 @@
 #include <limits>
 #include <iomanip>
 #include <fstream>
-
 using namespace std;
 
 /**
@@ -86,7 +85,7 @@ int isTwoPowerTimesPrimeSquared(int n, const vector<bool> &isPrime) {
 
 /**
  * Function: computeDivisorsAndSigmaSingle
- * ---------------------------------------
+ * --------------------------------------
  * Computes the divisors of a single number and their sum (sigma).
  *
  * Parameters:
@@ -165,7 +164,7 @@ vector<string> findValidCombinations(const vector<int> &D, long long diff) {
 
 /**
  * Function: generateNumbers
- * -------------------------
+ * ------------------------
  * Generates a list of numbers to process based on the selected form.
  *
  * Parameters:
@@ -225,7 +224,7 @@ vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime) {
 
 /**
  * Function: printTableHeader
- * --------------------------
+ * -------------------------
  * Prints the header of the formatted table with vertical splitters.
  */
 void printTableHeader() {
@@ -234,20 +233,14 @@ void printTableHeader() {
     const int width_sigma = 15;
     const int width_2n = 15;
     const int width_diff = 15;
-    const int width_combinations = 30;
+    const int width_combinations = 35;
 
     // Print the top border
-    cout << "+"
-         << string(width_n, '-')
-         << "+"
-         << string(width_sigma, '-')
-         << "+"
-         << string(width_2n, '-')
-         << "+"
-         << string(width_diff, '-')
-         << "+"
-         << string(width_combinations, '-')
-         << "+\n";
+    cout << "+" << string(width_n, '-') << "+"
+         << string(width_sigma, '-') << "+"
+         << string(width_2n, '-') << "+"
+         << string(width_diff, '-') << "+"
+         << string(width_combinations, '-') << "+\n";
 
     // Print the header row
     cout << "| " << left << setw(width_n - 1) << "n"
@@ -258,22 +251,16 @@ void printTableHeader() {
          << "|\n";
 
     // Print the separator
-    cout << "+"
-         << string(width_n, '=')
-         << "+"
-         << string(width_sigma, '=')
-         << "+"
-         << string(width_2n, '=')
-         << "+"
-         << string(width_diff, '=')
-         << "+"
-         << string(width_combinations, '=')
-         << "+\n";
+    cout << "+" << string(width_n, '=') << "+"
+         << string(width_sigma, '=') << "+"
+         << string(width_2n, '=') << "+"
+         << string(width_diff, '=') << "+"
+         << string(width_combinations, '=') << "+\n";
 }
 
 /**
  * Function: printTableRow
- * -----------------------
+ * ----------------------
  * Prints a single row of the formatted table with vertical splitters.
  *
  * Parameters:
@@ -289,7 +276,7 @@ void printTableRow(int n, long long sigma, long long two_n, long long diff, cons
     const int width_sigma = 15;
     const int width_2n = 15;
     const int width_diff = 15;
-    const int width_combinations = 30;
+    const int width_combinations = 35;
 
     cout << "| " << left << setw(width_n - 1) << n
          << "| " << left << setw(width_sigma - 1) << sigma
@@ -336,6 +323,18 @@ int main() {
         }
     }
 
+    // Prompt to exclude primes
+    cout << "Do you want to exclude prime numbers from the output? (y/n): ";
+    string excludePrimesStr;
+    getline(cin, excludePrimesStr);
+    bool excludePrimes = false;
+    if(!excludePrimesStr.empty()) {
+        char response = tolower(excludePrimesStr[0]);
+        if(response == 'y') {
+            excludePrimes = true;
+        }
+    }
+
     // Generate primes up to N
     vector<bool> isPrime = sieveOfEratosthenes(N);
 
@@ -345,10 +344,14 @@ int main() {
     // Display the type of numbers being processed
     cout << "\nNear Perfect Numbers up to " << N;
     switch(choice) {
-        case 1: cout << ":\n"; break;
-        case 2: cout << " of the form n = 2^k * p:\n"; break;
-        case 3: cout << " of the form n = 2^k * p^2:\n"; break;
+        case 1: cout << ":"; break;
+        case 2: cout << " of the form n = 2^k * p:"; break;
+        case 3: cout << " of the form n = 2^k * p^2:"; break;
     }
+    if(excludePrimes) {
+        cout << " (Primes excluded from output)";
+    }
+    cout << "\n";
 
     // Print the table header
     printTableHeader();
@@ -365,11 +368,39 @@ int main() {
     csvFile << "n,sigma(n),2n,diff,Valid (d1, d2) Combinations\n";
 
     for(auto n : numbersToProcess) {
+        // Skip prime numbers if exclusion is enabled
+        if(excludePrimes && isPrime[n]) {
+            continue;
+        }
+
         auto [divisors, sigma] = computeDivisorsAndSigmaSingle(n);
         long long two_n = 2LL * n;
         long long diff = sigma - two_n;
 
         vector<string> validPairs = findValidCombinations(divisors, diff);
+
+        // **New Logic: Exclude numbers where all validPairs involve the same divisor**
+        bool hasDistinctPair = false;
+        for(const auto &pairStr : validPairs) {
+            // Parse the pair string to extract d1 and d2
+            // Expected format: "+d1 +d2", "+d1 -d2", etc.
+            size_t spacePos = pairStr.find(' ');
+            if(spacePos != string::npos) {
+                string d1Str = pairStr.substr(1, spacePos - 1); // Skip the '+' or '-'
+                string d2Str = pairStr.substr(spacePos + 2, pairStr.length() - spacePos - 2); // Skip the sign
+                int d1 = stoi(d1Str);
+                int d2 = stoi(d2Str);
+                if(d1 != d2) {
+                    hasDistinctPair = true;
+                    break;
+                }
+            }
+        }
+
+        // Proceed only if there's at least one distinct pair
+        if(!hasDistinctPair) {
+            continue; // Skip this number as it doesn't meet the criteria
+        }
 
         if(!validPairs.empty()) {
             anyNearPerfect = true;
@@ -390,17 +421,11 @@ int main() {
     }
 
     // Print the bottom border of the table
-    cout << "+"
-         << string(10, '-')
-         << "+"
-         << string(15, '-')
-         << "+"
-         << string(15, '-')
-         << "+"
-         << string(15, '-')
-         << "+"
-         << string(30, '-')
-         << "+\n";
+    cout << "+" << string(10, '-') << "+"
+         << string(15, '-') << "+"
+         << string(15, '-') << "+"
+         << string(15, '-') << "+"
+         << string(35, '-') << "+\n";
 
     // Close the CSV file
     csvFile.close();
@@ -414,6 +439,9 @@ int main() {
             case 1: cout << "."; break;
             case 2: cout << " of the form n = 2^k * p."; break;
             case 3: cout << " of the form n = 2^k * p^2."; break;
+        }
+        if(excludePrimes) {
+            cout << " Primes were excluded from the output.";
         }
         cout << "\n";
     }
