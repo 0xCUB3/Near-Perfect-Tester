@@ -7,30 +7,101 @@
 #include <iomanip>
 #include <fstream>
 #include <cctype> // For tolower
+#include <cstdint> // For uint64_t
+
 using namespace std;
 
 /**
- * Function: sieveOfEratosthenes
- * -----------------------------
- * Implements the Sieve of Eratosthenes to identify prime numbers up to N.
+ * Function: simpleSieve
+ * ---------------------
+ * Finds all prime numbers up to sqrtN using the simple sieve of Eratosthenes.
  *
  * Parameters:
- *  - N: The upper limit up to which primes are identified.
+ *  - sqrtN: The upper limit up to which primes are identified.
  *
  * Returns:
- *  - A vector<bool> where isPrime[i] is true if i is a prime, false otherwise.
+ *  - A vector of primes up to sqrtN.
  */
-vector<bool> sieveOfEratosthenes(int N) {
-    vector<bool> isPrime(N + 1, true);
-    if (N >= 0) isPrime[0] = isPrime[1] = false;
-    for (int i = 2; i <= N; ++i) {
+vector<uint64_t> simpleSieve(uint64_t sqrtN) {
+    uint64_t limit = sqrtN + 1;
+    vector<bool> isPrime(limit, true);
+    isPrime[0] = isPrime[1] = false;
+
+    for (uint64_t i = 2; i * i <= sqrtN; ++i) {
         if (isPrime[i]) {
-            for (int j = 2 * i; j <= N; j += i) {
+            for (uint64_t j = i * i; j <= sqrtN; j += i) {
                 isPrime[j] = false;
             }
         }
     }
-    return isPrime;
+
+    vector<uint64_t> primes;
+    primes.reserve(static_cast<size_t>(sqrtN / log(sqrtN)) + 1); // Approximation
+    for (uint64_t i = 2; i <= sqrtN; ++i) {
+        if (isPrime[i]) {
+            primes.push_back(i);
+        }
+    }
+    return primes;
+}
+
+/**
+ * Function: isPrime
+ * -----------------
+ * Checks if a number is prime using trial division with the provided list of primes.
+ *
+ * Parameters:
+ *  - n: The number to check for primality.
+ *  - primes: A vector of known primes up to sqrt(n).
+ *
+ * Returns:
+ *  - True if n is prime, False otherwise.
+ */
+bool isPrime(uint64_t n, const vector<uint64_t>& primes) {
+    if (n < 2) return false;
+    uint64_t sqrt_n = static_cast<uint64_t>(sqrt(static_cast<long double>(n)));
+    for (const auto& p : primes) {
+        if (p > sqrt_n) break;
+        if (n % p == 0) return false;
+    }
+    return true;
+}
+
+/**
+ * Function: computeSigma
+ * ----------------------
+ * Computes the sum of divisors (sigma function) of a number using its prime factorization.
+ *
+ * Parameters:
+ *  - n: The number for which sigma(n) is computed.
+ *  - primes: A vector of primes up to sqrt(n).
+ *
+ * Returns:
+ *  - The sum of divisors of n.
+ */
+uint64_t computeSigma(uint64_t n, const vector<uint64_t>& primes) {
+    if (n == 0) return 0;
+
+    uint64_t sigma = 1;
+    uint64_t original_n = n;
+
+    for (const auto& p : primes) {
+        if (p * p > n) break;
+        if (n % p == 0) {
+            uint64_t term = 1;
+            uint64_t power = 1;
+            while (n % p == 0) {
+                power *= p;
+                term += power;
+                n /= p;
+            }
+            sigma *= term;
+        }
+    }
+    if (n > 1) {
+        sigma *= (1 + n);
+    }
+    return sigma;
 }
 
 /**
@@ -41,84 +112,20 @@ vector<bool> sieveOfEratosthenes(int N) {
  *
  * Parameters:
  *  - n: The number to be checked.
- *  - isPrime: A vector indicating primality of numbers up to N.
+ *  - primes: Vector containing all primes up to sqrt(n).
  *
  * Returns:
  *  - The prime p if n = 2^k * p; otherwise, 0.
  */
-int isTwoPowerTimesPrime(int n, const vector<bool> &isPrime) {
+uint64_t isTwoPowerTimesPrime(uint64_t n, const vector<uint64_t>& primes) {
     if (n < 1) return 0;
     while (n % 2 == 0) {
         n /= 2;
     }
-    if (n >= 3 && isPrime[n]) {
+    if (n >= 3 && isPrime(n, primes)) {
         return n;
     }
     return 0;
-}
-
-/**
- * Function: isTwoPowerTimesPrimePower
- * -----------------------------------
- * Checks if a given number n can be expressed in the form n = 2^k * p^m,
- * where p is an odd prime, m >= 1, and k >= 0.
- *
- * Parameters:
- *  - n: The number to be checked.
- *  - isPrime: A vector indicating primality of numbers up to N.
- *  - exponent: The exponent m for the prime p.
- *
- * Returns:
- *  - The prime p if n = 2^k * p^m; otherwise, 0.
- */
-int isTwoPowerTimesPrimePower(int n, const vector<bool> &isPrime, int exponent) {
-    if (n < 1 || exponent < 1) return 0;
-    while (n % 2 == 0) {
-        n /= 2;
-    }
-    // Now, n should be p^m
-    double root = pow(static_cast<double>(n), 1.0 / exponent);
-    int p = round(root);
-    // Verify p^exponent == n and p is prime
-    long long p_power = 1;
-    for(int i = 0; i < exponent; ++i) {
-        p_power *= p;
-        if(p_power > n) break;
-    }
-    if (p_power == n && p >= 3 && isPrime[p]) {
-        return p;
-    }
-    return 0;
-}
-
-/**
- * Function: computeDivisorsAndSigmaSingle
- * ---------------------------------------
- * Computes the divisors of a single number and their sum (sigma).
- *
- * Parameters:
- *  - n: The number for which divisors and sigma are computed.
- *
- * Returns:
- *  - A pair containing:
- *      - A vector of divisors of n.
- *      - The sum of divisors (sigma(n)).
- */
-pair<vector<int>, long long> computeDivisorsAndSigmaSingle(int n) {
-    vector<int> divisors;
-    long long sigma = 0;
-    for (int i = 1; i <= static_cast<int>(sqrt(n)); ++i) {
-        if (n % i == 0) {
-            divisors.push_back(i);
-            sigma += i;
-            if (i != n / i) {
-                divisors.push_back(n / i);
-                sigma += n / i;
-            }
-        }
-    }
-    sort(divisors.begin(), divisors.end());
-    return {divisors, sigma};
 }
 
 /**
@@ -140,7 +147,7 @@ enum SignOption {
  * that satisfy the equation: sigma(n) = 2n ± d1 ± d2
  *
  * Parameters:
- *  - D: Reference to the vector containing all divisors of n.
+ *  - D: Reference to the vector containing all prime factors of n.
  *  - diff: The difference sigma(n) - 2n.
  *  - signOption: The user's choice for sign combinations.
  *
@@ -153,13 +160,14 @@ enum SignOption {
  *  - ONLY_POSITIVE: Includes ++
  *  - ONLY_NEGATIVE: Includes --
  */
-vector<string> findValidCombinations(const vector<int> &D, long long diff, SignOption signOption) {
+vector<string> findValidCombinations(const vector<uint64_t> &D, long long diff, SignOption signOption) {
     vector<string> validPairs;
+
     // Iterate through all possible pairs (d1, d2)
     for (auto it1 = D.begin(); it1 != D.end(); ++it1) {
         for (auto it2 = D.begin(); it2 != D.end(); ++it2) {
-            int d1 = *it1;
-            int d2 = *it2;
+            uint64_t d1 = *it1;
+            uint64_t d2 = *it2;
 
             // Skip if any of the divisors is zero
             if (d1 == 0 || d2 == 0) {
@@ -169,47 +177,45 @@ vector<string> findValidCombinations(const vector<int> &D, long long diff, SignO
             // Depending on the signOption, include or exclude certain combinations
             switch(signOption) {
                 case ALL:
-                    // Check all four possible sign combinations
                     // ++
-                    if ((d1 + d2) == diff) {
+                    if ((static_cast<long long>(d1) + static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("+" + to_string(d1) + " +" + to_string(d2));
                     }
                     // +-
-                    if ((d1 - d2) == diff) {
+                    if ((static_cast<long long>(d1) - static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("+" + to_string(d1) + " -" + to_string(d2));
                     }
                     // -+
-                    if ((-d1 + d2) == diff) {
+                    if ((-static_cast<long long>(d1) + static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("-" + to_string(d1) + " +" + to_string(d2));
                     }
                     // --
-                    if ((-d1 - d2) == diff) {
+                    if ((-static_cast<long long>(d1) - static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("-" + to_string(d1) + " -" + to_string(d2));
                     }
                     break;
 
                 case MIXED_SIGNS:
-                    // Include only +-, -+
                     // +-
-                    if ((d1 - d2) == diff) {
+                    if ((static_cast<long long>(d1) - static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("+" + to_string(d1) + " -" + to_string(d2));
                     }
                     // -+
-                    if ((-d1 + d2) == diff) {
+                    if ((-static_cast<long long>(d1) + static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("-" + to_string(d1) + " +" + to_string(d2));
                     }
                     break;
 
                 case ONLY_POSITIVE:
-                    // Include only ++
-                    if ((d1 + d2) == diff) {
+                    // ++
+                    if ((static_cast<long long>(d1) + static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("+" + to_string(d1) + " +" + to_string(d2));
                     }
                     break;
 
                 case ONLY_NEGATIVE:
-                    // Include only --
-                    if ((-d1 - d2) == diff) {
+                    // --
+                    if ((-static_cast<long long>(d1) - static_cast<long long>(d2)) == diff) {
                         validPairs.emplace_back("-" + to_string(d1) + " -" + to_string(d2));
                     }
                     break;
@@ -236,54 +242,55 @@ vector<string> findValidCombinations(const vector<int> &D, long long diff, SignO
  * Parameters:
  *  - N: The upper limit up to which numbers are generated.
  *  - choice: The form selected by the user.
- *  - isPrime: A vector indicating primality of numbers up to N.
+ *  - primes: Vector containing all primes up to sqrt(N).
  *  - exponent: The exponent m for the prime p (only relevant for choice 3).
  *
  * Returns:
  *  - A vector of integers representing the numbers to process.
  */
-vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime, int exponent = 2) {
-    vector<int> numbers;
+vector<uint64_t> generateNumbers(uint64_t N, int choice, const vector<uint64_t> &primes, int exponent = 2) {
+    vector<uint64_t> numbers;
 
     if (choice == 1) {
-        // All numbers from 1 to N
-        for (int n = 1; n <= N; ++n) {
+        // All numbers from 1 to N - Note: Processing all numbers up to 1e12 is impractical.
+        // Consider limiting N or optimizing further if choice 1 is necessary.
+        for (uint64_t n = 1; n <= N; ++n) {
             numbers.push_back(n);
+            if (n == numeric_limits<uint64_t>::max()) break; // Prevent overflow
         }
     }
     else if (choice == 2) {
         // Numbers of the form n = 2^k * p
-        for (int p = 3; p <= N; ++p) {
-            if (isPrime[p]) {
-                int power = 1;
-                while (true) {
-                    long long n = static_cast<long long>(power) * p;
-                    if (n > N) break;
-                    numbers.push_back(static_cast<int>(n));
-                    power *= 2;
-                }
+        for (const auto& p : primes) {
+            if (p < 3) continue; // Skip even primes
+            uint64_t power = 1;
+            while (true) {
+                unsigned __int128 n = static_cast<unsigned __int128>(power) * p;
+                if (n > N) break;
+                numbers.emplace_back(static_cast<uint64_t>(n));
+                power *= 2;
+                if (power == 0) break; // Prevent overflow
             }
         }
     }
     else if (choice == 3) {
         // Numbers of the form n = 2^k * p^m
-        for (int p = 3; p <= N; ++p) {
-            if (isPrime[p]) {
-                // Compute p^m
-                long long p_power = 1;
-                for(int i = 0; i < exponent; ++i) {
-                    p_power *= p;
-                    if(p_power > N) break;
-                }
-                if(p_power > N) continue;
+        for (const auto& p : primes) {
+            if (p < 3) continue; // Skip even primes
+            unsigned __int128 p_power = 1;
+            for(int i = 0; i < exponent; ++i) {
+                p_power *= p;
+                if(p_power > N) break;
+            }
+            if(p_power > N) continue;
 
-                int power = 1;
-                while (true) {
-                    long long n = p_power * power;
-                    if (n > N) break;
-                    numbers.push_back(static_cast<int>(n));
-                    power *= 2;
-                }
+            uint64_t power = 1;
+            while (true) {
+                unsigned __int128 n = p_power * power;
+                if (n > N) break;
+                numbers.emplace_back(static_cast<uint64_t>(n));
+                power *= 2;
+                if (power == 0) break; // Prevent overflow
             }
         }
     }
@@ -302,18 +309,18 @@ vector<int> generateNumbers(int N, int choice, const vector<bool> &isPrime, int 
  */
 void printTableHeader() {
     // Define column widths
-    const int width_n = 10;
-    const int width_sigma = 15;
-    const int width_2n = 15;
-    const int width_diff = 15;
-    const int width_combinations = 35;
+    const int width_n = 12;
+    const int width_sigma = 20;
+    const int width_2n = 20;
+    const int width_diff = 20;
+    const int width_combinations = 50;
 
     // Print the top border
-    cout << "+" << string(width_n, '-') << "+"
-         << string(width_sigma, '-') << "+"
-         << string(width_2n, '-') << "+"
-         << string(width_diff, '-') << "+"
-         << string(width_combinations, '-') << "+\n";
+    cout << "+" << string(width_n, '-')
+         << "+" << string(width_sigma, '-')
+         << "+" << string(width_2n, '-')
+         << "+" << string(width_diff, '-')
+         << "+" << string(width_combinations, '-') << "+\n";
 
     // Print the header row
     cout << "| " << left << setw(width_n - 1) << "n"
@@ -324,11 +331,11 @@ void printTableHeader() {
          << "|\n";
 
     // Print the separator
-    cout << "+" << string(width_n, '=') << "+"
-         << string(width_sigma, '=') << "+"
-         << string(width_2n, '=') << "+"
-         << string(width_diff, '=') << "+"
-         << string(width_combinations, '=') << "+\n";
+    cout << "+" << string(width_n, '=')
+         << "+" << string(width_sigma, '=')
+         << "+" << string(width_2n, '=')
+         << "+" << string(width_diff, '=')
+         << "+" << string(width_combinations, '=') << "+\n";
 }
 
 /**
@@ -343,13 +350,13 @@ void printTableHeader() {
  *  - diff: The difference sigma(n) - 2n.
  *  - combinations: The valid (d1, d2) combinations as a string.
  */
-void printTableRow(int n, long long sigma, long long two_n, long long diff, const string& combinations) {
+void printTableRow(uint64_t n, uint64_t sigma, uint64_t two_n, long long diff, const string& combinations) {
     // Define column widths
-    const int width_n = 10;
-    const int width_sigma = 15;
-    const int width_2n = 15;
-    const int width_diff = 15;
-    const int width_combinations = 35;
+    const int width_n = 12;
+    const int width_sigma = 20;
+    const int width_2n = 20;
+    const int width_diff = 20;
+    const int width_combinations = 50;
 
     cout << "| " << left << setw(width_n - 1) << n
          << "| " << left << setw(width_sigma - 1) << sigma
@@ -360,8 +367,8 @@ void printTableRow(int n, long long sigma, long long two_n, long long diff, cons
 }
 
 int main() {
-    int N;
-    cout << "Enter the upper limit N: ";
+    uint64_t N;
+    cout << "Enter the upper limit N (up to 1,000,000,000,000): ";
     while(!(cin >> N) || N < 1) {
         cout << "Please enter a positive integer greater than 0: ";
         cin.clear();
@@ -381,7 +388,6 @@ int main() {
     getline(cin, choiceStr);
     int choice;
     int exponent = 2; // Default exponent for choice 3
-
     if(choiceStr.empty()) {
         choice = 1;
     }
@@ -463,11 +469,16 @@ int main() {
         }
     }
 
-    // Generate primes up to N
-    vector<bool> isPrime = sieveOfEratosthenes(N);
+    // Generate base primes up to sqrt(N) using simple sieve
+    uint64_t sqrtN = static_cast<uint64_t>(sqrt(static_cast<long double>(N))) + 1;
+    cout << "\nGenerating base primes up to " << sqrtN << " using simple sieve...\n";
+    vector<uint64_t> basePrimes = simpleSieve(sqrtN);
+    cout << "Number of base primes found: " << basePrimes.size() << "\n";
 
     // Generate numbers to process based on user's choice
-    vector<int> numbersToProcess = generateNumbers(N, choice, isPrime, (choice == 3) ? exponent : 2);
+    cout << "Generating numbers based on the selected form...\n";
+    vector<uint64_t> numbersToProcess = generateNumbers(N, choice, basePrimes, (choice == 3) ? exponent : 2);
+    cout << "Number of numbers to process: " << numbersToProcess.size() << "\n";
 
     // Display the type of numbers being processed
     cout << "\nNear Perfect Numbers up to " << N;
@@ -515,27 +526,74 @@ int main() {
     // Write CSV headers
     csvFile << "n,sigma(n),2n,diff,Valid (d1, d2) Combinations\n";
 
+    // Processing numbers
+    uint64_t processed = 0;
+    size_t totalNumbers = numbersToProcess.size();
     for(auto n : numbersToProcess) {
+        processed++;
+        // Display progress every 1 million
+        if (processed % 1000000 == 0) {
+            cout << "\rProcessed " << processed << " / " << totalNumbers << " numbers..." << flush;
+        }
+
         // Skip prime numbers if exclusion is enabled
-        if(excludePrimes && isPrime[n]) {
+        if(excludePrimes && isPrime(n, basePrimes)) {
             continue;
         }
 
         // Compute sigma(n)
-        auto [divisors, sigma] = computeDivisorsAndSigmaSingle(n);
-        long long two_n = 2LL * n;
-        long long diff = sigma - two_n;
+        uint64_t sigma = computeSigma(n, basePrimes);
+        uint64_t two_n = 2ULL * n;
+        long long diff = static_cast<long long>(sigma) - static_cast<long long>(two_n);
 
         // Find valid (d1, d2) combinations based on signOption
+        // To find d1 and d2, you need the list of divisors
+        // Instead of computing all divisors, you can derive them from prime factors
+        // However, for simplicity, we'll compute the divisors here
+
+        // Compute divisors
+        // Since sigma(n) is already computed, but you need the actual divisors for combinations
+        // To optimize, consider memoizing or using other strategies if this becomes a bottleneck
+        // For now, we'll compute them on-the-fly
+        // Note: For large n, this can be optimized further
+
+        // Function to compute all divisors from prime factors
+        vector<uint64_t> divisors = {1};
+        uint64_t temp = n;
+        for(const auto& p : basePrimes) {
+            if(p * p > temp) break;
+            if(temp % p == 0) {
+                vector<uint64_t> tempDivisors;
+                uint64_t power = 1;
+                while(temp % p == 0) {
+                    power *= p;
+                    temp /= p;
+                    // Multiply existing divisors with the new power
+                    for(auto d : divisors) {
+                        tempDivisors.push_back(d * power);
+                    }
+                }
+                // Merge and remove duplicates
+                divisors.insert(divisors.end(), tempDivisors.begin(), tempDivisors.end());
+            }
+        }
+        if(temp > 1) {
+            vector<uint64_t> tempDivisors;
+            for(auto d : divisors) {
+                tempDivisors.push_back(d * temp);
+            }
+            divisors.insert(divisors.end(), tempDivisors.begin(), tempDivisors.end());
+        }
+        sort(divisors.begin(), divisors.end());
+
+        // Now find valid combinations
         vector<string> validPairs = findValidCombinations(divisors, diff, signOption);
 
         // **New Logic: Exclude numbers where all validPairs involve the same divisor**
         bool hasDistinctPair = false;
-        string combinations; // Initialize here to avoid scope issues
+        string combinationsCombinedStr;
         for(const auto &pairStr : validPairs) {
             // Parse the pair string to extract d1 and d2
-            // Possible formats:
-            // "+d1 +d2", "+d1 -d2", "-d1 +d2", "-d1 -d2"
             size_t spacePos = pairStr.find(' ');
             if(spacePos != string::npos) {
                 // Extract d1
@@ -544,11 +602,9 @@ int main() {
                 // Extract d2 with sign intact
                 string d2Str = pairStr.substr(spacePos + 1); // Includes the sign
 
-                // No need to remove leading '+', as stoi handles it
                 try {
                     int d1 = stoi(d1Str);
                     int d2 = stoi(d2Str); // Corrected Line
-
                     // Check if d1 and d2 have different absolute values
                     if(abs(d1) != abs(d2)) {
                         hasDistinctPair = true;
@@ -574,27 +630,27 @@ int main() {
         if(!validPairs.empty()) {
             anyNearPerfect = true;
             // Combine all valid pairs into a single string separated by "; "
-            string combinationsCombined;
+            string combinationsCombinedStr;
             for(const auto &combination : validPairs) {
-                if(!combinationsCombined.empty()) combinationsCombined += "; ";
-                combinationsCombined += combination;
+                if(!combinationsCombinedStr.empty()) combinationsCombinedStr += "; ";
+                combinationsCombinedStr += combination;
             }
 
             // Print the row in the table
-            printTableRow(n, sigma, two_n, diff, combinationsCombined);
+            printTableRow(n, sigma, two_n, diff, combinationsCombinedStr);
 
             // Write the row to the CSV file
             // Enclose combinations in quotes to handle commas or special characters
-            csvFile << n << "," << sigma << "," << two_n << "," << diff << ",\"" << combinationsCombined << "\"\n";
+            csvFile << n << "," << sigma << "," << two_n << "," << diff << ",\"" << combinationsCombinedStr << "\"\n";
         }
     }
-
+    cout << "\n"; // For clean newline after progress updates
     // Print the bottom border of the table
-    cout << "+" << string(10, '-') << "+"
-         << string(15, '-') << "+"
-         << string(15, '-') << "+"
-         << string(15, '-') << "+"
-         << string(35, '-') << "+\n";
+    cout << "+" << string(12, '-')
+         << "+" << string(20, '-')
+         << "+" << string(20, '-')
+         << "+" << string(20, '-')
+         << "+" << string(50, '-') << "+\n";
 
     // Close the CSV file
     csvFile.close();
