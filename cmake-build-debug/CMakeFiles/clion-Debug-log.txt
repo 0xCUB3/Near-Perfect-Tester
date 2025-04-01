@@ -11,6 +11,6 @@
 -- Check for working CXX compiler: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ - skipped
 -- Detecting CXX compile features
 -- Detecting CXX compile features - done
--- Configuring done (0.7s)
+-- Configuring done (0.6s)
 -- Generating done (0.0s)
 -- Build files have been written to: /Users/alexanderskula/Documents/Near-Perfect-Tester/cmake-build-debug
