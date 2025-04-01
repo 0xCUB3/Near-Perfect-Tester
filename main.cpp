@@ -2,38 +2,64 @@
 #include <vector>
 #include <cmath>
 #include <string>
-#include <algorithm>
+#include <algorithm> // Needed for std::max, std::sort, std::unique
 #include <limits>
 #include <iomanip>
 #include <fstream>
-#include <cctype> // For tolower
-#include <cstdint> // For uint64_t
-#include <set> // For unique divisor finding in computeDivisors
+#include <cctype>    // For tolower
+#include <cstdint>   // For uint64_t
+#include <set>       // For unique divisor finding in computeDivisors
+#include <stdexcept> // For stoi exceptions
 
 using namespace std;
 
 // Helper function to safely multiply two uint64_t, returning 0 on overflow
 // Using __int128 for intermediate check
 uint64_t safe_multiply(uint64_t a, uint64_t b) {
+    // Early exit for 0 to avoid unnecessary __int128 calculation
+    if (a == 0 || b == 0) return 0;
+    // Check if multiplication would obviously overflow based on leading bits
+    // (More advanced check, requires bit manipulation or could use compiler builtins)
+    // Simple check: if a > max/b roughly
+    if (a > numeric_limits<uint64_t>::max() / b) return 0;
+
+    // Use 128-bit integer if available for a precise check
+    #ifdef __SIZEOF_INT128__ // Check if the compiler supports 128-bit integers
     unsigned __int128 result = (unsigned __int128)a * b;
     if (result > numeric_limits<uint64_t>::max()) {
         return 0; // Indicate overflow
     }
     return (uint64_t)result;
+    #else
+    // Fallback if 128-bit integers aren't available (less precise)
+    // Already checked a > max/b above, which is a decent heuristic
+    return a * b;
+    #endif
 }
 
 // Helper function to safely raise uint64_t to a power, returning 0 on overflow
 uint64_t safe_power(uint64_t base, int exp) {
     uint64_t res = 1;
     if (exp < 0) return 0; // Negative exponent not handled here
-    if (exp == 0) return (base == 0) ? 0 : 1; // 0^0 is undefined, let's return 1, but 0^positive is 0. x^0 is 1 for x!=0
+    if (base == 0) return (exp == 0) ? 1 : 0; // 0^0=1, 0^positive=0
+    if (exp == 0) return 1; // x^0 = 1 for x!=0
 
-    for (int i = 0; i < exp; ++i) {
-         unsigned __int128 temp_res = (unsigned __int128)res * base;
-         if (temp_res > numeric_limits<uint64_t>::max()) {
-             return 0; // Overflow
-         }
-         res = (uint64_t)temp_res;
+    uint64_t current_base = base;
+    int current_exp = exp;
+
+    // Exponentiation by squaring
+    while (current_exp > 0) {
+        if (current_exp % 2 == 1) { // If exponent is odd
+            res = safe_multiply(res, current_base);
+            if (res == 0 && current_base != 0) return 0; // Overflow detected by safe_multiply
+        }
+        current_exp /= 2;
+        if (current_exp > 0) { // Only need to square if exponent isn't done
+             // Check before squaring: if base > sqrt(max), squaring will overflow
+             if (current_base > (uint64_t)sqrt(numeric_limits<uint64_t>::max())) return 0;
+             current_base = safe_multiply(current_base, current_base);
+             if (current_base == 0) return 0; // Overflow detected by safe_multiply
+        }
     }
     return res;
 }
@@ -45,19 +71,19 @@ uint64_t safe_power(uint64_t base, int exp) {
  * Finds all prime numbers up to sqrtN using the simple sieve of Eratosthenes.
  *
  * Parameters:
- *  - sqrtN: The upper limit up to which primes are identified.
+ *  - limit: The upper limit up to which primes are identified.
  *
  * Returns:
- *  - A vector of primes up to sqrtN.
+ *  - A vector of primes up to limit.
  */
-vector<uint64_t> simpleSieve(uint64_t sqrtN) {
-    uint64_t limit = sqrtN + 1;
-    vector<bool> isPrime(limit, true);
+vector<uint64_t> simpleSieve(uint64_t limit) {
+    if (limit < 2) return {};
+    vector<bool> isPrime(limit + 1, true);
     isPrime[0] = isPrime[1] = false;
 
-    for (uint64_t i = 2; i * i <= sqrtN; ++i) {
+    for (uint64_t i = 2; i * i <= limit; ++i) {
         if (isPrime[i]) {
-            for (uint64_t j = i * i; j <= sqrtN; j += i) {
+            for (uint64_t j = i * i; j <= limit; j += i) {
                 isPrime[j] = false;
             }
         }
@@ -65,12 +91,18 @@ vector<uint64_t> simpleSieve(uint64_t sqrtN) {
 
     vector<uint64_t> primes;
     // Reserve approximate space, avoid frequent reallocations
-    if (sqrtN > 10) { // log(1) is problematic, avoid for small N
-        primes.reserve(static_cast<size_t>(1.2 * sqrtN / log(sqrtN))); // Approximation + buffer
+    if (limit > 10) { // log(1) is problematic, avoid for small limit
+        try {
+             primes.reserve(static_cast<size_t>(1.2 * limit / log(limit))); // Approximation + buffer
+        } catch (const std::bad_alloc& e) {
+             cerr << "Memory allocation failed for primes vector reservation." << endl;
+             // Continue without reservation
+        }
     } else {
         primes.reserve(5); // Small number
     }
-    for (uint64_t i = 2; i <= sqrtN; ++i) {
+
+    for (uint64_t i = 2; i <= limit; ++i) {
         if (isPrime[i]) {
             primes.push_back(i);
         }
@@ -102,16 +134,13 @@ bool isPrime(uint64_t n, const vector<uint64_t>& primes) {
     // Check against provided primes
     for (const auto& p : primes) {
         if (p > sqrt_n) break;
-        if (n % p == 0) return false;
+        // Skip 2 and 3 as they were already checked
+        if (p > 3 && n % p == 0) return false;
     }
 
     // If sqrt_n is larger than the largest prime checked, continue checking
-    // This part is less efficient if primes vector is too small, but ensures correctness.
-    // Optimized trial division starting from the next prime after the largest in `primes` or 5
-    uint64_t start_check = primes.empty() ? 5 : primes.back() + (primes.back() % 6 == 1 ? 4 : 2) ;
-    if (start_check < 5) start_check = 5; // Ensure we start at 5 or later
-
-    for (uint64_t i = start_check; i <= sqrt_n; i += 6) {
+    // Optimized trial division starting from 5, stepping by 6 (5, 7, 11, 13, ...)
+    for (uint64_t i = 5; i <= sqrt_n; i += 6) {
          if (n % i == 0 || n % (i + 2) == 0) {
              return false;
          }
@@ -147,21 +176,27 @@ uint64_t computeSigma(uint64_t n, const vector<uint64_t>& primes) {
         while (temp_n % 2 == 0) {
             power = safe_multiply(power, 2);
             if (power == 0) return 0; // Overflow in power calculation
+            #ifdef __SIZEOF_INT128__
             unsigned __int128 next_term = (unsigned __int128)term + power;
             if (next_term > numeric_limits<uint64_t>::max()) return 0; // Overflow in term sum
             term = (uint64_t)next_term;
+            #else
+            // Fallback check (less precise)
+            if (term > numeric_limits<uint64_t>::max() - power) return 0;
+            term += power;
+            #endif
             temp_n /= 2;
         }
         sigma = safe_multiply(sigma, term);
-        if (sigma == 0) return 0; // Overflow in sigma product
+        if (sigma == 0 && term != 0) return 0; // Overflow in sigma product
     }
 
     // Handle odd prime factors
-    uint64_t sqrt_temp_n = static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n)));
+    uint64_t sqrt_temp_n = (temp_n > 1) ? static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n))) : 0;
     for (const auto& p : primes) {
         if (p == 2) continue; // Already handled
         if (p > sqrt_temp_n) break; // Optimization: check primes up to sqrt(remaining n)
-        if (p*p > temp_n) break; // Alternative optimization based on current prime
+        if (p*p > temp_n) break; // Alternative optimization based on current prime (requires temp_n>0 check)
 
         if (temp_n % p == 0) {
             uint64_t term = 1;
@@ -169,24 +204,31 @@ uint64_t computeSigma(uint64_t n, const vector<uint64_t>& primes) {
             while (temp_n % p == 0) {
                 power = safe_multiply(power, p);
                 if (power == 0) return 0; // Overflow in power calculation
-                unsigned __int128 next_term = (unsigned __int128)term + power;
+                 #ifdef __SIZEOF_INT128__
+                 unsigned __int128 next_term = (unsigned __int128)term + power;
                  if (next_term > numeric_limits<uint64_t>::max()) return 0; // Overflow in term sum
-                term = (uint64_t)next_term;
+                 term = (uint64_t)next_term;
+                 #else
+                 if (term > numeric_limits<uint64_t>::max() - power) return 0;
+                 term += power;
+                 #endif
                 temp_n /= p;
             }
              sigma = safe_multiply(sigma, term);
-             if (sigma == 0) return 0; // Overflow in sigma product
+             if (sigma == 0 && term != 0) return 0; // Overflow in sigma product
             // Update sqrt_temp_n as temp_n decreases
-            sqrt_temp_n = static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n)));
+             sqrt_temp_n = (temp_n > 1) ? static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n))) : 0;
         }
     }
 
     // If temp_n is still greater than 1, it must be a prime factor itself
     if (temp_n > 1) {
-        uint64_t term = 1 + temp_n; // sigma(p) = 1 + p
-        if (term < temp_n) return 0; // Check for overflow in 1+p
+        // Calculate term = 1 + temp_n safely
+        uint64_t term;
+        if (temp_n == numeric_limits<uint64_t>::max()) return 0; // 1 + max overflows
+        term = temp_n + 1;
         sigma = safe_multiply(sigma, term);
-        if (sigma == 0) return 0; // Overflow in sigma product
+        if (sigma == 0 && term != 0) return 0; // Overflow in sigma product
     }
 
     return sigma;
@@ -203,15 +245,16 @@ uint64_t computeSigma(uint64_t n, const vector<uint64_t>& primes) {
  *  - primes: A vector of primes up to sqrt(n) (can be smaller, but less efficient).
  *
  * Returns:
- *  - A sorted vector of distinct divisors of n.
+ *  - A sorted vector of distinct divisors of n. Returns empty vector if overflow occurs during calculation.
  */
 vector<uint64_t> computeDivisors(uint64_t n, const vector<uint64_t>& primes) {
     set<uint64_t> divisors_set;
-    divisors_set.insert(1);
     if (n == 0) return {};
+    divisors_set.insert(1);
     if (n == 1) return {1};
 
     uint64_t temp_n = n;
+    bool overflow_detected = false; // Flag to track overflow
 
     // Function to add multiples of a prime power to the divisor set
     auto add_prime_power_divisors = [&](uint64_t p) {
@@ -221,41 +264,61 @@ vector<uint64_t> computeDivisors(uint64_t n, const vector<uint64_t>& primes) {
             power = safe_multiply(power, p);
             if (power == 0) { // Check for overflow
                 cerr << "\nWarning: Overflow computing power for divisor generation at n=" << n << ", p=" << p << ". Results might be incomplete." << endl;
-                return false; // Indicate failure due to overflow
+                overflow_detected = true;
+                return; // Stop processing this prime
             }
             for (uint64_t d : current_divisors) {
                  uint64_t new_divisor = safe_multiply(d, power);
-                 if (new_divisor == 0) {
-                     cerr << "\nWarning: Overflow computing new divisor for n=" << n << ". Results might be incomplete." << endl;
-                     continue; // Skip this divisor but continue others
+                 if (new_divisor == 0 && d != 0 && power != 0) { // Check overflow, avoid 0*x or x*0 case false positive
+                     cerr << "\nWarning: Overflow computing new divisor (" << d << "*" << power << ") for n=" << n << ". Results might be incomplete." << endl;
+                     overflow_detected = true;
+                     // Decide whether to continue adding other divisors for this power, or stop entirely
+                     // Let's stop processing this prime factor entirely on overflow for safety.
+                     return;
                  }
                  divisors_set.insert(new_divisor);
             }
             temp_n /= p;
         }
-        return true; // Success
     };
 
     // Handle factor 2
-    if (!add_prime_power_divisors(2)) return {}; // Return empty on overflow
+    add_prime_power_divisors(2);
+    if (overflow_detected) return {}; // Return empty on overflow
 
     // Handle odd prime factors
-    uint64_t sqrt_temp_n = static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n)));
+    uint64_t sqrt_temp_n = (temp_n > 1) ? static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n))) : 0;
     for (const auto& p : primes) {
         if (p == 2) continue;
         if (p > sqrt_temp_n) break;
-        if (p*p > temp_n) break;
+        if (temp_n == 1) break; // Optimization: if temp_n reduced to 1, no more factors
+        // Use p*p check to avoid repeated sqrt calculation inside loop
+        // Need to be careful with large p near sqrt(ULLONG_MAX)
+        uint64_t p_squared = safe_multiply(p, p);
+        if (p_squared == 0 && p > 1) { // p*p overflowed
+            // Cannot use p*p check, rely on p > sqrt_temp_n check
+        } else if (p_squared > temp_n) {
+            break; // If p*p > remaining temp_n, p cannot be a factor (unless p = temp_n)
+        }
+
 
         if (temp_n % p == 0) {
-            if (!add_prime_power_divisors(p)) return {}; // Return empty on overflow
+            add_prime_power_divisors(p);
+             if (overflow_detected) return {}; // Return empty on overflow
             // Update sqrt_temp_n as temp_n decreases
-            sqrt_temp_n = static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n)));
+             sqrt_temp_n = (temp_n > 1) ? static_cast<uint64_t>(sqrt(static_cast<long double>(temp_n))) : 0;
         }
     }
 
     // If temp_n is still greater than 1, it's a prime factor
-    if (temp_n > 1) {
-        if (!add_prime_power_divisors(temp_n)) return {}; // Return empty on overflow
+    if (temp_n > 1 && !overflow_detected) {
+        add_prime_power_divisors(temp_n);
+        if (overflow_detected) return {}; // Return empty on overflow
+    }
+
+    // Final check before returning
+    if (overflow_detected) {
+         return {};
     }
 
     return vector<uint64_t>(divisors_set.begin(), divisors_set.end());
@@ -307,15 +370,24 @@ vector<string> findValidCombinations(const vector<uint64_t> &D, long long diff, 
             }
 
             // Cast to long long for safe arithmetic with diff
-            long long ld1 = static_cast<long long>(d1);
-            long long ld2 = static_cast<long long>(d2);
+            // Note: This cast itself can be problematic if d1/d2 > LLONG_MAX
+            // However, diff is long long, so comparisons should be okay if d1/d2 are large positive.
+            // The checks below handle potential overflow in the *combination* arithmetic.
+            long long ld1 = (d1 <= (uint64_t)numeric_limits<long long>::max()) ? static_cast<long long>(d1) : -1; // Mark as invalid if too large
+            long long ld2 = (d2 <= (uint64_t)numeric_limits<long long>::max()) ? static_cast<long long>(d2) : -1;
+
+            if (ld1 == -1 || ld2 == -1) continue; // Skip if divisor exceeds long long max
+
 
             // Check combinations based on signOption
             if (signOption == ALL || signOption == ONLY_POSITIVE) {
                 // ++
-                if ((ld1 + ld2) == diff) {
-                    uniquePairs.insert("+" + to_string(d1) + " +" + to_string(d2));
-                }
+                 // Check for potential overflow before addition: ld1 + ld2 > LLONG_MAX ?
+                 if (ld1 <= numeric_limits<long long>::max() - ld2) {
+                     if ((ld1 + ld2) == diff) {
+                         uniquePairs.insert("+" + to_string(d1) + " +" + to_string(d2));
+                     }
+                 }
             }
             if (signOption == ALL || signOption == MIXED_SIGNS) {
                 // +-
@@ -329,9 +401,15 @@ vector<string> findValidCombinations(const vector<uint64_t> &D, long long diff, 
             }
             if (signOption == ALL || signOption == ONLY_NEGATIVE) {
                 // --
-                if ((-ld1 - ld2) == diff) {
-                     uniquePairs.insert("-" + to_string(d1) + " -" + to_string(d2));
-                }
+                 // Check for potential underflow before subtraction: -ld1 - ld2 < LLONG_MIN ?
+                 // Equivalent to: -ld1 < LLONG_MIN + ld2
+                 if (ld2 > numeric_limits<long long>::min() + ld1) { // Check avoids direct LLONG_MIN + ld2 if ld2 is large neg
+                     if ((-ld1 - ld2) == diff) {
+                          uniquePairs.insert("-" + to_string(d1) + " -" + to_string(d2));
+                     }
+                 } else if (ld1 == 0 && ld2 == 0 && diff == 0) { // Handle 0 case specifically if needed
+                     // This case shouldn't occur if d1, d2 > 0
+                 }
             }
         }
     }
@@ -363,6 +441,7 @@ vector<uint64_t> generateNumbers(uint64_t N, int choice, const vector<uint64_t> 
         cout << "Consider using a smaller N or choosing a specific form (2, 3, or 4)." << endl;
         // All numbers from 1 to N
         for (uint64_t n = 1; n <= N; ++n) {
+            // Check if n fits the structure if needed, although choice 1 implies all numbers
             numbers_set.insert(n);
             if (n == numeric_limits<uint64_t>::max()) break; // Prevent overflow in loop
         }
@@ -372,26 +451,30 @@ vector<uint64_t> generateNumbers(uint64_t N, int choice, const vector<uint64_t> 
             uint64_t p = primes[i];
             if (p < 3) continue; // Skip p=2
 
-            uint64_t current_n = p; // Start with k=0 (2^0 * p)
-            if (current_n > N) break; // If p itself > N, no need to continue with this p
-
             uint64_t k_power_of_2 = 1; // Represents 2^k
             while(true) {
                 // Calculate n = p * 2^k
-                 unsigned __int128 n_128 = static_cast<unsigned __int128>(p) * k_power_of_2;
+                 uint64_t current_n = safe_multiply(p, k_power_of_2);
 
-                 if (n_128 == 0 || n_128 > N) {
-                     break; // Overflow or exceeded limit N
+                 if (current_n == 0 || current_n > N) {
+                     // Overflow or exceeded limit N. Stop for this p.
+                     // If k_power_of_2 was already 1, and p*1 > N, then break the outer loop too.
+                     if (k_power_of_2 == 1 && (current_n > N || p > N)) break; // Optimization
+                     break; // Stop inner loop (powers of 2)
                  }
 
-                 numbers_set.insert(static_cast<uint64_t>(n_128));
+                 numbers_set.insert(current_n);
 
                  // Prepare for next power of 2
-                 unsigned __int128 next_k_power = (unsigned __int128)k_power_of_2 * 2;
-                 if (next_k_power > numeric_limits<uint64_t>::max()) break; // Next power of 2 overflows uint64_t
-                 k_power_of_2 = (uint64_t)next_k_power;
-                 if (k_power_of_2 == 0) break; // Should not happen if check above works, but safety first
+                 uint64_t next_k_power = safe_multiply(k_power_of_2, 2);
+                 if (next_k_power == 0 || next_k_power < k_power_of_2 ) { // Overflow check
+                     break;
+                 }
+                 k_power_of_2 = next_k_power;
             }
+             // Optimization: if p itself is > N, subsequent primes will be too.
+             // Need to be careful if N is very large, p could exceed sqrt(N) but still be < N.
+             if (p > N) break;
         }
     } else if (choice == 3) {
         // Numbers of the form n = 2^k * p^m
@@ -400,72 +483,102 @@ vector<uint64_t> generateNumbers(uint64_t N, int choice, const vector<uint64_t> 
             if (p < 3) continue; // Skip p=2
 
             uint64_t p_power_m = safe_power(p, exponent_m);
-            if (p_power_m == 0) continue; // Overflow computing p^m or p^m > N initially
-            if (p_power_m > N) continue;  // If p^m itself > N, no need for powers of 2
+            // If p^m overflows or is > N, stop for this p and subsequent larger primes
+            if (p_power_m == 0 || p_power_m > N) {
+                // Optimization check: If p > N^(1/m), then p^m will exceed N.
+                // Approximate check: If p*p > N and m >= 2, we can often break early.
+                 uint64_t p_sq = safe_multiply(p,p);
+                 if (p_sq == 0 && p > 1) {} // p*p overflowed, can't use this check
+                 else if (p_sq > N && exponent_m >=2) break;
+
+                 if (p > N && exponent_m == 1) break; // Break if p > N for m=1
+
+                 // If p_power_m overflowed or > N, continue to next prime p, unless we can break outer loop
+                 continue;
+            }
+
 
             uint64_t k_power_of_2 = 1; // Represents 2^k
             while(true) {
                  // Calculate n = p^m * 2^k
-                 unsigned __int128 n_128 = static_cast<unsigned __int128>(p_power_m) * k_power_of_2;
+                 uint64_t current_n = safe_multiply(p_power_m, k_power_of_2);
 
-                 if (n_128 == 0 || n_128 > N) {
+                 if (current_n == 0 || current_n > N) {
                      break; // Overflow or exceeded limit N
                  }
-                 numbers_set.insert(static_cast<uint64_t>(n_128));
+                 numbers_set.insert(current_n);
 
                  // Prepare for next power of 2
-                 unsigned __int128 next_k_power = (unsigned __int128)k_power_of_2 * 2;
-                 if (next_k_power > numeric_limits<uint64_t>::max()) break; // Next power of 2 overflows uint64_t
-                 k_power_of_2 = (uint64_t)next_k_power;
-                 if (k_power_of_2 == 0) break;
+                  uint64_t next_k_power = safe_multiply(k_power_of_2, 2);
+                  if (next_k_power == 0 || next_k_power < k_power_of_2 ) { // Overflow check
+                      break;
+                  }
+                  k_power_of_2 = next_k_power;
             }
+             if (p > N) break; // Optimization
         }
     } else if (choice == 4) {
-        // Numbers of the form n = 2^k * p^m * q^n, where q > p (both odd primes)
-        for (size_t i = 0; i < primes.size(); ++i) {
-            uint64_t p = primes[i];
-            if (p < 3) continue; // p must be an odd prime
+        // Check if exponent_n is 0. If so, this case is redundant with Choice 3.
+        if (exponent_n <= 0) { // Changed to <= 0 for robustness
+            cerr << "\nWarning: Exponent n must be >= 1 for choice 4. Skipping generation for this choice." << endl;
+        } else {
+            // Numbers of the form n = 2^k * p^m * q^n, where q > p (both odd primes)
+            for (size_t i = 0; i < primes.size(); ++i) {
+                uint64_t p = primes[i];
+                if (p < 3) continue; // p must be an odd prime
 
-            uint64_t p_power_m = safe_power(p, exponent_m);
-            if (p_power_m == 0) continue; // Overflow computing p^m
-            if (p_power_m > N) break;     // Optimization: if p^m > N, no larger p will work either
+                uint64_t p_power_m = safe_power(p, exponent_m);
+                if (p_power_m == 0) continue; // Overflow computing p^m, try next p
+                if (p_power_m > N) break;     // Optimization: if p^m > N, no larger p or any q will work
 
-            for (size_t j = i + 1; j < primes.size(); ++j) { // Iterate q > p
-                uint64_t q = primes[j];
-                // q is already > p and odd (since primes list > 2 only contains odd primes)
+                for (size_t j = i + 1; j < primes.size(); ++j) { // Iterate q > p
+                    uint64_t q = primes[j];
+                    // q is already > p and odd
 
-                uint64_t q_power_n = safe_power(q, exponent_n);
-                if (q_power_n == 0) continue; // Overflow computing q^n
+                    uint64_t q_power_n = safe_power(q, exponent_n);
+                    if (q_power_n == 0) continue; // Overflow computing q^n, try next q
 
-                // Calculate base = p^m * q^n
-                unsigned __int128 base_128 = static_cast<unsigned __int128>(p_power_m) * q_power_n;
-                if (base_128 == 0 || base_128 > N) {
-                     // If base > N, increasing q further won't help for this p
-                     // If base calculation overflows, increasing q further will also overflow.
-                     break;
-                }
-                uint64_t base = static_cast<uint64_t>(base_128);
-
-                // Now multiply by powers of 2 (2^k)
-                uint64_t k_power_of_2 = 1; // Represents 2^k
-                while (true) {
-                    // Calculate n = base * 2^k
-                    unsigned __int128 n_128 = static_cast<unsigned __int128>(base) * k_power_of_2;
-
-                    if (n_128 == 0 || n_128 > N) {
-                        break; // Overflow or exceeded limit N
+                    // Calculate base = p^m * q^n
+                    uint64_t base = safe_multiply(p_power_m, q_power_n);
+                    if (base == 0 || base > N) {
+                         // If base > N, increasing q further won't help for this p
+                         // If base calculation overflows, increasing q further will likely also overflow.
+                         break; // Stop trying larger q for this p
                     }
-                    numbers_set.insert(static_cast<uint64_t>(n_128));
 
-                    // Prepare for next power of 2
-                    unsigned __int128 next_k_power = (unsigned __int128)k_power_of_2 * 2;
-                    if (next_k_power > numeric_limits<uint64_t>::max()) break; // Next power of 2 overflows uint64_t
-                    k_power_of_2 = (uint64_t)next_k_power;
-                    if (k_power_of_2 == 0) break;
-                }
-            }
-        }
-    }
+                    // Now multiply by powers of 2 (2^k)
+                    uint64_t k_power_of_2 = 1; // Represents 2^k
+                    while (true) {
+                        // Calculate n = base * 2^k
+                        uint64_t current_n = safe_multiply(base, k_power_of_2);
+
+                        if (current_n == 0 || current_n > N) {
+                            break; // Overflow or exceeded limit N
+                        }
+                        numbers_set.insert(current_n);
+
+                        // Prepare for next power of 2
+                        uint64_t next_k_power = safe_multiply(k_power_of_2, 2);
+                        if (next_k_power == 0 || next_k_power < k_power_of_2) { // Overflow check
+                            break;
+                        }
+                        k_power_of_2 = next_k_power;
+                    } // End k loop
+                } // End q loop
+
+                // Optimization: If p^m * 3^n (smallest q^n) is already large, break outer loop early
+                 uint64_t smallest_q_power_n = safe_power(3, exponent_n); // Smallest q is 3
+                 if (smallest_q_power_n > 0) { // Check if 3^n didn't overflow
+                     uint64_t min_base = safe_multiply(p_power_m, smallest_q_power_n);
+                     // If p^m * 3^n > N, no q will work for this p, so break p loop
+                     if (min_base > N && min_base != 0) {
+                         break;
+                     }
+                 }
+
+            } // End p loop
+        } // End else block for exponent_n > 0 check
+    } // End choice 4
 
     // Convert set to vector for return
     vector<uint64_t> numbers(numbers_set.begin(), numbers_set.end());
@@ -530,17 +643,24 @@ void printTableRow(uint64_t n, uint64_t sigma, uint64_t two_n, long long diff, c
     const int width_diff = 12;
     const int width_combinations = 50;
 
+    // Limit combination string length for display
+    string display_combinations = combinations;
+    if (display_combinations.length() > width_combinations - 3) { // Account for "| " and " |"
+        display_combinations = display_combinations.substr(0, width_combinations - 6) + "...";
+    }
+
+
     cout << "| " << left << setw(width_n - 1) << n
          << "| " << left << setw(width_sigma - 1) << sigma
          << "| " << left << setw(width_2n - 1) << two_n
          << "| " << left << setw(width_diff - 1) << diff
-         << "| " << left << setw(width_combinations - 1) << combinations
+         << "| " << left << setw(width_combinations - 1) << display_combinations
          << "|\n";
 }
 
 // Function to check if a string contains only digits
 bool is_digits(const std::string &str) {
-    return str.find_first_not_of("0123456789") == std::string::npos;
+    return !str.empty() && str.find_first_not_of("0123456789") == std::string::npos;
 }
 
 
@@ -558,9 +678,9 @@ int main() {
 
     cout << "\nChoose the form to search for near perfect numbers:\n";
     cout << "1. All numbers (can be slow for large N)\n";
-    cout << "2. Numbers of the form n = 2^k * p (where p is an odd prime)\n";
-    cout << "3. Numbers of the form n = 2^k * p^m (where p is an odd prime, m >= 1)\n";
-    cout << "4. Numbers of the form n = 2^k * p^m * q^n (where p, q are odd primes, q > p, m,n >= 1)\n";
+    cout << "2. Numbers of the form n = 2^k * p (where p is an odd prime, k>=0)\n";
+    cout << "3. Numbers of the form n = 2^k * p^m (where p is an odd prime, k>=0, m>=1)\n";
+    cout << "4. Numbers of the form n = 2^k * p^m * q^n (where p, q are odd primes, q>p, k>=0, m>=1, n>=1)\n";
     cout << "Enter 1, 2, 3, or 4 (Press Enter for default - Option 2): ";
 
     string choiceStr;
@@ -579,9 +699,12 @@ int main() {
                 cout << "Invalid choice. Defaulting to option 2 (n = 2^k * p).\n";
                 choice = 2;
             }
-        } catch(...) {
-            cout << "Invalid input. Defaulting to option 2 (n = 2^k * p).\n";
-            choice = 2;
+        } catch(const std::invalid_argument& ia) {
+             cout << "Invalid input. Defaulting to option 2 (n = 2^k * p).\n";
+             choice = 2;
+        } catch(const std::out_of_range& oor) {
+             cout << "Input out of range. Defaulting to option 2 (n = 2^k * p).\n";
+             choice = 2;
         }
     }
 
@@ -591,16 +714,24 @@ int main() {
         string exponentMStr;
         getline(cin, exponentMStr);
         if(exponentMStr.empty()) {
-            exponent_m = 1; // Default
+            exponent_m = 1; // Default if empty
+        } else if (!is_digits(exponentMStr)) {
+            cout << "Invalid input for m (not a number). Defaulting to 1.\n";
+            exponent_m = 1;
         } else {
             try {
-                exponent_m = stoi(exponentMStr);
-                if(exponent_m < 1) {
-                    cout << "Invalid exponent m. Must be >= 1. Defaulting to 1.\n";
-                    exponent_m = 1;
-                }
-            } catch(...) {
-                cout << "Invalid input for m. Defaulting to 1.\n";
+                unsigned long long temp_m = stoull(exponentMStr);
+                if (temp_m < 1 || temp_m > 60) { // Exponent > ~60 likely overflows uint64_t even for p=3
+                     cout << "Exponent m must be between 1 and 60. Defaulting to 1.\n";
+                     exponent_m = 1;
+                 } else {
+                    exponent_m = static_cast<int>(temp_m);
+                 }
+            } catch(const std::invalid_argument& ia) {
+                cout << "Invalid input format for m. Defaulting to 1.\n";
+                exponent_m = 1;
+            } catch(const std::out_of_range& oor) {
+                cout << "Exponent m out of range. Defaulting to 1.\n";
                 exponent_m = 1;
             }
         }
@@ -609,16 +740,24 @@ int main() {
          string exponentMStr;
          getline(cin, exponentMStr);
          if(exponentMStr.empty()) {
-             exponent_m = 1; // Default
+             exponent_m = 1;
+         } else if (!is_digits(exponentMStr)) {
+             cout << "Invalid input for m (not a number). Defaulting to 1.\n";
+             exponent_m = 1;
          } else {
              try {
-                 exponent_m = stoi(exponentMStr);
-                 if(exponent_m < 1) {
-                     cout << "Invalid exponent m. Must be >= 1. Defaulting to 1.\n";
+                 unsigned long long temp_m = stoull(exponentMStr);
+                  if (temp_m < 1 || temp_m > 60) {
+                     cout << "Exponent m must be between 1 and 60. Defaulting to 1.\n";
                      exponent_m = 1;
+                 } else {
+                     exponent_m = static_cast<int>(temp_m);
                  }
-             } catch(...) {
-                 cout << "Invalid input for m. Defaulting to 1.\n";
+             } catch(const std::invalid_argument& ia) {
+                 cout << "Invalid input format for m. Defaulting to 1.\n";
+                 exponent_m = 1;
+             } catch(const std::out_of_range& oor) {
+                 cout << "Exponent m out of range. Defaulting to 1.\n";
                  exponent_m = 1;
              }
          }
@@ -627,19 +766,31 @@ int main() {
          string exponentNStr;
          getline(cin, exponentNStr);
          if(exponentNStr.empty()) {
-             exponent_n = 1; // Default
+             exponent_n = 1;
+         } else if (!is_digits(exponentNStr)) {
+             cout << "Invalid input for n (not a number). Defaulting to 1.\n";
+             exponent_n = 1;
          } else {
              try {
-                 exponent_n = stoi(exponentNStr);
-                 if(exponent_n < 1) {
-                     cout << "Invalid exponent n. Must be >= 1. Defaulting to 1.\n";
+                 unsigned long long temp_n = stoull(exponentNStr);
+                 if (temp_n < 1 || temp_n > 60) {
+                     cout << "Exponent n must be between 1 and 60. Defaulting to 1.\n";
                      exponent_n = 1;
+                 } else {
+                     exponent_n = static_cast<int>(temp_n);
                  }
-             } catch(...) {
-                 cout << "Invalid input for n. Defaulting to 1.\n";
+             } catch(const std::invalid_argument& ia) {
+                 cout << "Invalid input format for n. Defaulting to 1.\n";
+                 exponent_n = 1;
+             } catch(const std::out_of_range& oor) {
+                 cout << "Exponent n out of range. Defaulting to 1.\n";
                  exponent_n = 1;
              }
          }
+          // Double check in case user entered 0 and bypassed digit check somehow
+          if (exponent_n < 1) exponent_n = 1;
+          if (exponent_m < 1) exponent_m = 1;
+
     }
 
 
@@ -675,9 +826,12 @@ int main() {
                 cout << "Invalid choice. Defaulting to All combinations.\n";
                 signOption = ALL;
             }
-        } catch(...) {
+        } catch(const std::invalid_argument& ia) {
             cout << "Invalid input. Defaulting to All combinations.\n";
             signOption = ALL;
+        } catch(const std::out_of_range& oor) {
+             cout << "Input out of range. Defaulting to All combinations.\n";
+             signOption = ALL;
         }
     }
 
@@ -695,7 +849,7 @@ int main() {
 
 
     // Generate base primes up to sqrt(N) using simple sieve
-    uint64_t sqrtN = static_cast<uint64_t>(sqrt(static_cast<long double>(N))) + 1;
+    uint64_t sqrtN = (N > 1) ? static_cast<uint64_t>(sqrt(static_cast<long double>(N))) + 1 : 2;
     cout << "\nGenerating base primes up to " << sqrtN << " using simple sieve...\n";
     vector<uint64_t> basePrimes = simpleSieve(sqrtN);
     cout << "Number of base primes found: " << basePrimes.size() << "\n";
@@ -709,9 +863,9 @@ int main() {
     cout << "\nSearching for Near Perfect Numbers up to " << N;
     switch(choice) {
         case 1: cout << ":"; break;
-        case 2: cout << " of the form n = 2^k * p:"; break;
-        case 3: cout << " of the form n = 2^k * p^" << exponent_m << ":"; break;
-        case 4: cout << " of the form n = 2^k * p^" << exponent_m << " * q^" << exponent_n << " (q > p):"; break;
+        case 2: cout << " of the form n = 2^k * p (k>=0):"; break;
+        case 3: cout << " of the form n = 2^k * p^" << exponent_m << " (k>=0, m=" << exponent_m << "):"; break;
+        case 4: cout << " of the form n = 2^k * p^" << exponent_m << " * q^" << exponent_n << " (q>p, k>=0, m=" << exponent_m << ", n=" << exponent_n << "):"; break;
     }
     if(excludePrimes) {
         cout << " (Primes excluded)";
@@ -752,12 +906,13 @@ int main() {
     // Processing numbers
     uint64_t processed = 0;
     size_t totalNumbers = numbersToProcess.size();
-    const uint64_t report_interval = std::max((uint64_t)1, (uint64_t)(totalNumbers / 100)); // Report roughly 100 times
+    // Calculate report interval, ensure it's at least 1
+    const uint64_t report_interval = (totalNumbers > 100) ? std::max((uint64_t)1, (uint64_t)(totalNumbers / 100)) : 1;
 
     for(uint64_t n : numbersToProcess) {
         processed++;
         // Display progress
-        if (processed % report_interval == 0 || processed == totalNumbers) {
+        if (totalNumbers > 0 && (processed % report_interval == 0 || processed == totalNumbers)) {
              double percent = (double)processed / totalNumbers * 100.0;
              cout << "\rProcessing: " << processed << " / " << totalNumbers << " (" << fixed << setprecision(1) << percent << "%)" << flush;
         }
@@ -767,48 +922,67 @@ int main() {
 
         // Skip prime numbers if exclusion is enabled
         // Note: isPrime can be slow for very large n if basePrimes is relatively small
-        if(excludePrimes && isPrime(n, basePrimes)) {
-            continue;
+        if(excludePrimes) {
+            // Optimization: if n is in the basePrimes list (up to sqrtN), it's prime
+            // This is faster than running the full isPrime check for smaller primes
+            bool maybe_prime = false;
+            if (n <= sqrtN) {
+                 if (binary_search(basePrimes.begin(), basePrimes.end(), n)) {
+                     maybe_prime = true;
+                 }
+            }
+            // If not found in basePrimes or n > sqrtN, run the full check
+            if (maybe_prime || (n > sqrtN && isPrime(n, basePrimes))) {
+                 continue;
+            }
         }
+
 
         // Compute sigma(n)
         uint64_t sigma = computeSigma(n, basePrimes);
-        if (sigma == 0) { // Check if computeSigma overflowed
+        if (sigma == 0 && n > 0) { // Check if computeSigma overflowed (sigma(0)=0 is valid)
              // cerr << "\nWarning: Sigma calculation overflowed for n=" << n << ". Skipping." << endl;
              continue;
         }
 
         // Calculate 2n safely
-        unsigned __int128 two_n_128 = (unsigned __int128)n * 2;
-        if (two_n_128 > numeric_limits<uint64_t>::max()) {
+        uint64_t two_n = safe_multiply(n, 2);
+         if (two_n == 0 && n != 0) { // Check overflow from safe_multiply
              // cerr << "\nWarning: 2n calculation overflowed for n=" << n << ". Skipping." << endl;
              continue;
-        }
-        uint64_t two_n = (uint64_t)two_n_128;
+         }
 
-        // Calculate difference: sigma(n) - 2n
+
+        // Calculate difference: sigma(n) - 2n (as long long)
         long long diff;
         // Check for potential overflow/underflow before subtraction
         if (sigma >= two_n) {
-            diff = static_cast<long long>(sigma - two_n);
+            uint64_t diff_abs = sigma - two_n;
+             if (diff_abs > (uint64_t)numeric_limits<long long>::max()) {
+                 //cerr << "\nWarning: Positive difference calculation overflowed long long for n=" << n << ". Skipping." << endl;
+                 continue; // Difference too large positive to fit in long long
+             }
+             diff = static_cast<long long>(diff_abs);
         } else {
             // sigma < two_n, result is negative
-            // Ensure the difference fits within long long limits
-            if (two_n - sigma > static_cast<uint64_t>(numeric_limits<long long>::max()) + 1ULL ) {
-                 //cerr << "\nWarning: Negative difference calculation overflowed for n=" << n << ". Skipping." << endl;
+            uint64_t diff_abs = two_n - sigma;
+            // Check if absolute difference exceeds magnitude of LLONG_MIN
+             if (diff_abs > (uint64_t)numeric_limits<long long>::max() + 1ULL ) { // Compare against max+1 magnitude
+                 //cerr << "\nWarning: Negative difference calculation overflowed long long for n=" << n << ". Skipping." << endl;
                  continue; // Difference too large negative
-            }
-            diff = -static_cast<long long>(two_n - sigma);
+             }
+            diff = -static_cast<long long>(diff_abs);
         }
 
 
         // Compute divisors for finding combinations
         // This can be the bottleneck for large n
         vector<uint64_t> divisors = computeDivisors(n, basePrimes);
-        if (divisors.empty() && n > 0) { // Check if computeDivisors indicated overflow
-             cerr << "\nWarning: Divisor computation failed (likely overflow) for n=" << n << ". Skipping." << endl;
+        if (divisors.empty() && n > 1) { // Check if computeDivisors indicated overflow (n=1 has divisor {1})
+             // cerr << "\nWarning: Divisor computation failed (likely overflow) for n=" << n << ". Skipping." << endl;
              continue;
         }
+
 
         // Find valid (d1, d2) combinations based on signOption
         vector<string> validPairs = findValidCombinations(divisors, diff, signOption);
@@ -820,19 +994,24 @@ int main() {
                 for(const auto &pairStr : validPairs) {
                     // Minimal parsing: find the space separating the two signed numbers
                     size_t first_space = pairStr.find(' ');
-                    size_t second_sign = pairStr.find_first_of("+-", first_space + 1);
-                    if (first_space != string::npos && second_sign != string::npos) {
-                        string d1_abs_str = pairStr.substr(1, first_space - 1); // number after first sign
-                        string d2_abs_str = pairStr.substr(second_sign + 1); // number after second sign
-                        if (d1_abs_str != d2_abs_str) {
-                             hasDistinctPair = true;
-                             break; // Found one distinct pair, no need to check further
-                        }
+                    // Ensure space exists and there's something after it
+                    if (first_space != string::npos && first_space + 1 < pairStr.length()) {
+                         size_t second_sign_pos = pairStr.find_first_of("+-", first_space + 1);
+                         // Ensure second sign exists and there's something after it
+                         if (second_sign_pos != string::npos && second_sign_pos + 1 < pairStr.length()) {
+                             string d1_abs_str = pairStr.substr(1, first_space - 1); // number after first sign
+                             string d2_abs_str = pairStr.substr(second_sign_pos + 1); // number after second sign
+                             if (d1_abs_str != d2_abs_str) {
+                                  hasDistinctPair = true;
+                                  break; // Found one distinct pair, no need to check further
+                             }
+                         } else {
+                              // Parsing failed (e.g., no second sign or number) - treat as potentially distinct
+                              hasDistinctPair = true; break;
+                         }
                     } else {
-                        // Parsing failed? Log error or assume distinct to be safe?
-                        // Let's assume it might be distinct if parsing is weird.
-                        hasDistinctPair = true;
-                        break;
+                         // Parsing failed (e.g., no space) - treat as potentially distinct
+                         hasDistinctPair = true; break;
                     }
                 }
                 // If after checking all pairs, none had distinct absolute values, skip this n.
@@ -858,8 +1037,11 @@ int main() {
             // Enclose combinations in quotes to handle commas or potential special characters
             csvFile << n << "," << sigma << "," << two_n << "," << diff << ",\"" << combinationsCombinedStr << "\"\n";
         }
-    }
-    cout << "\nFinished processing." << endl; // End progress line
+    } // End number processing loop
+
+    // Ensure the final progress update is cleared or finalized
+    cout << "\rProcessing: " << totalNumbers << " / " << totalNumbers << " (100.0%)" << endl; // Final progress line
+
 
     // Print the bottom border of the table
     cout << "+" << string(15, '-') // Match updated width_n
@@ -879,7 +1061,13 @@ int main() {
             case 1: cout << "."; break;
             case 2: cout << " of the form n = 2^k * p."; break;
             case 3: cout << " of the form n = 2^k * p^" << exponent_m << "."; break;
-            case 4: cout << " of the form n = 2^k * p^" << exponent_m << " * q^" << exponent_n << " (q > p)."; break;
+            case 4:
+                 if (exponent_n > 0) { // Check if choice 4 was actually run
+                    cout << " of the form n = 2^k * p^" << exponent_m << " * q^" << exponent_n << " (q > p).";
+                 } else {
+                    cout << " (Choice 4 skipped as exponent n was not >= 1).";
+                 }
+                 break;
         }
         if(excludePrimes) {
             cout << " (Primes were excluded)";
